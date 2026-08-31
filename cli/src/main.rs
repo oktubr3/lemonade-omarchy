@@ -86,6 +86,8 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
     let cfg = config::Config::load()?;
     let entries = api::list_entries(&cfg, refresh)?;
 
+    // Un solo write con EPIPE ignorado: `lemonade list | head` no debe paniquear.
+    let mut out = String::new();
     if json {
         let items: Vec<serde_json::Value> = entries
             .iter()
@@ -99,13 +101,16 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
                 })
             })
             .collect();
-        println!("{}", serde_json::Value::Array(items));
+        out = serde_json::Value::Array(items).to_string();
+        out.push('\n');
     } else {
         for e in &entries {
             let totp = if e.has_totp { " [TOTP]" } else { "" };
-            println!("{}\t{}\t{}{}", e.id, e.title, e.username, totp);
+            out.push_str(&format!("{}\t{}\t{}{}\n", e.id, e.title, e.username, totp));
         }
     }
+    use std::io::Write;
+    let _ = std::io::stdout().write_all(out.as_bytes());
     Ok(())
 }
 

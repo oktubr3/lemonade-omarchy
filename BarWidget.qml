@@ -55,7 +55,7 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "\udb80\udf3e" // U+F033E nf-md-lock
+    text: "\uf094" // U+F094 nf-fa-lemon
     tooltipText: "Lemonade — contraseñas"
     onPressed: function(mb) {
       if (mb === Qt.LeftButton) root.togglePanel()

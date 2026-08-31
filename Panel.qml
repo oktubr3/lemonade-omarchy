@@ -200,7 +200,7 @@ Panel {
         width: parent.width
         spacing: Style.space(6)
         Text {
-          text: "\udb80\udf3e"
+          text: "\uf094"
           color: root.contentForeground
           font.family: Style.font.family
           font.pixelSize: Style.font.heading
