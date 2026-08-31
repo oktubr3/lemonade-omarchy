@@ -1,0 +1,9 @@
+# Build
+cli/target/
+
+# Config local con OAuth client ID y Firebase keys — NUNCA commitear
+config.local.json
+*.local.json
+
+# Estado/tokens (viven en ~/.local/state, pero por las dudas)
+tokens.json

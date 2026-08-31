@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.oktubr3.lemonade",
+  "name": "Lemonade Password Manager",
+  "version": "0.1.0",
+  "author": "oktubr3",
+  "license": "AGPL-3.0-only",
+  "description": "Search and copy your Lemonade passwords and TOTP codes from the Omarchy bar. Requires the lemonade CLI.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Lemonade",
+    "description": "Password search, clipboard copy with auto-clear, TOTP, and autotype.",
+    "category": "Security",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
