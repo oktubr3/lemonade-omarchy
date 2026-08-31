@@ -61,24 +61,56 @@ pub fn confirm(label: &str) -> Result<bool, String> {
     Ok(matches!(answer.to_lowercase().as_str(), "y" | "yes" | "s" | "si" | "sí"))
 }
 
-/// Contraseña aleatoria: letras, números y símbolos, sin sesgo
-/// (rejection sampling sobre getrandom).
+/// Contraseña aleatoria **compatible con el generador de la web app de
+/// Lemonade**: mismo charset (`!@#$%^&*()_+-=?.` + alfanumérico), garantiza
+/// al menos una minúscula, una mayúscula, un número y un símbolo, y mezcla.
+/// A diferencia de la web usa rejection sampling (sin sesgo de módulo) y
+/// entropía fresca para la mezcla.
 pub fn generate_password(len: usize) -> Result<String, String> {
-    const CHARSET: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{}:,.?";
-    let n = CHARSET.len(); // 85
-    let limit = (256 / n) * n; // 255: rechazo por encima para no sesgar
-    let mut out = String::with_capacity(len);
-    let mut buf = [0u8; 64];
-    while out.len() < len {
-        getrandom::getrandom(&mut buf).map_err(|e| format!("sin entropía: {e}"))?;
-        for &b in buf.iter() {
-            if (b as usize) < limit && out.len() < len {
-                out.push(CHARSET[b as usize % n] as char);
+    const LOWER: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+    const UPPER: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const DIGIT: &[u8] = b"0123456789";
+    const SYMBOL: &[u8] = b"!@#$%^&*()_+-=?.";
+    const ALL: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=?.";
+
+    fn pick(set: &[u8]) -> Result<u8, String> {
+        let n = set.len();
+        let limit = (256 / n) * n;
+        let mut b = [0u8; 1];
+        loop {
+            getrandom::getrandom(&mut b).map_err(|e| format!("sin entropía: {e}"))?;
+            if (b[0] as usize) < limit {
+                return Ok(set[b[0] as usize % n]);
             }
         }
     }
-    Ok(out)
+
+    let mut out: Vec<u8> = Vec::with_capacity(len);
+    // Una de cada clase, como la web app (largo mínimo 4 ya validado).
+    for set in [LOWER, UPPER, DIGIT, SYMBOL] {
+        if out.len() < len {
+            out.push(pick(set)?);
+        }
+    }
+    while out.len() < len {
+        out.push(pick(ALL)?);
+    }
+    // Fisher-Yates para que las clases garantizadas no queden al inicio.
+    for i in (1..out.len()).rev() {
+        let j = {
+            let n = i + 1;
+            let limit = (256 / n) * n;
+            let mut b = [0u8; 1];
+            loop {
+                getrandom::getrandom(&mut b).map_err(|e| format!("sin entropía: {e}"))?;
+                if (b[0] as usize) < limit {
+                    break b[0] as usize % n;
+                }
+            }
+        };
+        out.swap(i, j);
+    }
+    Ok(String::from_utf8(out).unwrap())
 }
 
 /// ¿Hay terminal interactiva disponible?

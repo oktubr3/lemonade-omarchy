@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.oktubr3.lemonade",
   "name": "Lemonade Password Manager",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "author": "oktubr3",
   "license": "AGPL-3.0-only",
   "description": "Search and copy your Lemonade passwords and TOTP codes from the Omarchy bar. Requires the lemonade CLI.",

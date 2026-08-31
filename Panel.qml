@@ -26,9 +26,17 @@ Panel {
   readonly property var barIdentity: hostWidget || root
 
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
-  readonly property color mutedForeground: Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.55)
-  readonly property color rowFill: Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.045)
-  readonly property color rowBorder: Qt.rgba(contentForeground.r, contentForeground.g, contentForeground.b, 0.18)
+
+  // Paleta "Lemon Noir" — el modo oscuro de la web app de Lemonade
+  // (src/css/quasar.variables.scss). Acentos sobre el fondo del shell.
+  readonly property color lemonGold: "#FFD700"
+  readonly property color lemonGreen: "#28A745"
+  readonly property color lemonRed: "#DC3545"
+  readonly property color lemonSurface: "#161B22"
+  readonly property color lemonElevated: "#21262D"
+  readonly property color lemonBorder: "#30363D"
+  readonly property color lemonText: "#F0F6FC"
+  readonly property color lemonMuted: "#8B949E"
 
   property var entries: []
   property var filtered: []
@@ -92,6 +100,18 @@ Panel {
     var e = current(); if (!e) return
     statusText = "Copiando usuario de " + e.title + "…"
     runAction(["copy", e.id, "--field", "username"], false)
+  }
+
+  function toggleFav() {
+    var e = current(); if (!e) return
+    statusText = (e.highlighted ? "Quitando" : "Marcando") + " favorita…"
+    runAction(["fav", e.id], false)
+  }
+
+  function shareEntry() {
+    var e = current(); if (!e) return
+    statusText = "Preparando \"" + e.title + "\" para compartir…"
+    runAction(["share", e.id], false)
   }
 
   function copyUrl() {
@@ -243,19 +263,38 @@ Panel {
           anchors.verticalCenter: parent.verticalCenter
           Text {
             text: "\uf094"
-            color: root.contentForeground
+            color: root.lemonGold
             font.family: Style.font.family
             font.pixelSize: Style.font.heading
             anchors.verticalCenter: parent.verticalCenter
           }
           Text {
             text: "Lemonade"
-            color: root.contentForeground
+            color: root.lemonText
             font.family: Style.font.family
             font.pixelSize: Style.font.heading
             font.bold: true
             anchors.verticalCenter: parent.verticalCenter
           }
+          Text {
+            text: "Password Manager"
+            color: root.lemonGold
+            font.family: Style.font.family
+            font.pixelSize: Style.font.heading
+            font.bold: true
+            anchors.verticalCenter: parent.verticalCenter
+          }
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(30)
+          anchors.verticalCenter: parent.verticalCenter
+          visible: !root.needsLogin && root.entries.length > 0
+          text: root.entries.length + " passwords"
+          color: root.lemonMuted
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
         }
 
         // "+": alta interactiva en terminal flotante (la contraseña se
@@ -266,17 +305,18 @@ Panel {
           anchors.verticalCenter: parent.verticalCenter
           width: Style.space(22)
           height: Style.space(22)
-          radius: Style.space(5)
-          color: addArea.containsMouse ? root.rowFill : "transparent"
-          border.color: addArea.containsMouse ? root.rowBorder : "transparent"
-          border.width: 1
+          radius: width / 2
+          color: root.lemonGold
+          opacity: addArea.containsMouse ? 1.0 : 0.88
 
           Text {
             anchors.centerIn: parent
+            anchors.verticalCenterOffset: -1
             text: "+"
-            color: root.contentForeground
+            color: "#0D1117"
             font.family: Style.font.family
             font.pixelSize: Style.font.heading
+            font.bold: true
           }
           MouseArea {
             id: addArea
@@ -296,6 +336,8 @@ Panel {
         width: parent.width
         placeholderText: root.needsLogin ? "Sin sesión" : "Buscar…"
         enabled: !root.needsLogin
+        accent: root.lemonGold
+        foreground: root.lemonText
         onTextChanged: { root.cancelDelete(); root.selectedIndex = 0; root.applyFilter() }
 
         Keys.onUpPressed: { root.cancelDelete(); root.move(-1) }
@@ -313,6 +355,8 @@ Panel {
           if (event.key === Qt.Key_E) { root.editEntry(); event.accepted = true }
           else if (event.key === Qt.Key_U) { root.copyUsername(); event.accepted = true }
           else if (event.key === Qt.Key_L) { root.copyUrl(); event.accepted = true }
+          else if (event.key === Qt.Key_F) { root.toggleFav(); event.accepted = true }
+          else if (event.key === Qt.Key_S) { root.shareEntry(); event.accepted = true }
         }
         function dispatchEnter(mods) {
           if (root.pendingDelete) { root.confirmDelete(); return }
@@ -334,7 +378,7 @@ Panel {
           width: parent.width
           wrapMode: Text.WordWrap
           text: "No hay sesión activa.\nCorré en una terminal:  lemonade login"
-          color: root.contentForeground
+          color: root.lemonText
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }
@@ -355,11 +399,23 @@ Panel {
           required property var modelData
           required property int index
           width: entryList.width
-          height: Style.space(34)
-          radius: Style.space(5)
-          color: index === root.selectedIndex ? root.rowFill : "transparent"
-          border.color: index === root.selectedIndex ? root.rowBorder : "transparent"
+          height: Style.space(36)
+          radius: Style.space(6)
+          color: index === root.selectedIndex ? root.lemonElevated : root.lemonSurface
+          border.color: index === root.selectedIndex ? root.lemonGold : root.lemonBorder
           border.width: 1
+
+          // Borde izquierdo verde de las favoritas, como la web app.
+          Rectangle {
+            visible: modelData.highlighted === true
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.margins: 1
+            width: Style.space(3)
+            radius: width / 2
+            color: root.lemonGreen
+          }
 
           MouseArea {
             anchors.fill: parent
@@ -380,13 +436,13 @@ Panel {
             spacing: Style.space(8)
 
             Column {
-              width: parent.width - totpBadge.width - parent.spacing
+              width: parent.width - starBadge.width - totpBadge.width - parent.spacing * 2
               anchors.verticalCenter: parent.verticalCenter
               Text {
                 width: parent.width
                 elide: Text.ElideRight
                 text: modelData.title
-                color: root.contentForeground
+                color: root.lemonText
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
               }
@@ -395,7 +451,7 @@ Panel {
                 elide: Text.ElideRight
                 visible: modelData.username !== ""
                 text: modelData.username
-                color: root.mutedForeground
+                color: root.lemonMuted
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
               }
@@ -407,9 +463,20 @@ Panel {
               visible: modelData.has_totp
               width: visible ? implicitWidth : 0
               text: "TOTP"
-              color: root.mutedForeground
+              color: root.lemonGold
               font.family: Style.font.family
               font.pixelSize: Style.font.bodySmall
+            }
+
+            Text {
+              id: starBadge
+              anchors.verticalCenter: parent.verticalCenter
+              visible: modelData.highlighted === true
+              width: visible ? implicitWidth : 0
+              text: "★"
+              color: root.lemonGreen
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
             }
           }
         }
@@ -418,7 +485,7 @@ Panel {
           visible: root.filtered.length === 0 && root.entries.length > 0
           anchors.centerIn: parent
           text: "Sin resultados"
-          color: root.mutedForeground
+          color: root.lemonMuted
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }
@@ -429,7 +496,7 @@ Panel {
         visible: root.statusText !== ""
         wrapMode: Text.WordWrap
         text: root.statusText
-        color: root.pendingDelete ? Color.urgent : root.mutedForeground
+        color: root.pendingDelete ? root.lemonRed : root.lemonMuted
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
@@ -439,15 +506,15 @@ Panel {
         visible: !root.needsLogin
         Text {
           width: parent.width
-          text: "↵ contraseña · ctrl+u usuario · ctrl+l URL · alt↵ TOTP"
-          color: root.mutedForeground
+          text: "↵ contraseña · ctrl+u usuario · ctrl+l URL · alt↵ TOTP · ctrl+s compartir"
+          color: root.lemonMuted
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }
         Text {
           width: parent.width
-          text: "shift↵ tipear · ctrl+e editar · ctrl+⌫ borrar · + crear"
-          color: root.mutedForeground
+          text: "ctrl+f ★ · shift↵ tipear · ctrl+e editar · ctrl+⌫ borrar · + crear"
+          color: root.lemonMuted
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }

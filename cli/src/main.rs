@@ -41,7 +41,12 @@ USO:
                                  Editar. Sin flags es interactivo
                                  (Enter conserva el valor actual)
   lemonade rm <id> [--yes]       Mandar a la papelera (recuperable en la web)
-  lemonade generate [largo]      Generar contraseña y copiarla (default 20)";
+  lemonade fav <id>              Marcar/desmarcar favorito (estrella de la web)
+  lemonade share <id> [--clear <segs>]
+                                 Copiar la entrada formateada para compartir
+                                 (WhatsApp, etc.) — auto-clear default 45s
+  lemonade generate [largo]      Generar contraseña y copiarla (default 16,
+                                 mismo formato que el generador de la web)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -58,6 +63,8 @@ fn main() -> ExitCode {
         "add" => cmd_add(&args[1..]),
         "edit" => cmd_edit(&args[1..]),
         "rm" | "delete" => cmd_rm(&args[1..]),
+        "fav" | "star" => cmd_fav(&args[1..]),
+        "share" => cmd_share(&args[1..]),
         "generate" | "gen" => cmd_generate(&args[1..]),
         "help" | "--help" | "-h" | "" => {
             println!("{USAGE}");
@@ -113,6 +120,7 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
                     "username": e.username,
                     "url": e.url,
                     "has_totp": e.has_totp,
+                    "highlighted": e.highlighted,
                 })
             })
             .collect();
@@ -121,7 +129,8 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
     } else {
         for e in &entries {
             let totp = if e.has_totp { " [TOTP]" } else { "" };
-            out.push_str(&format!("{}\t{}\t{}{}\n", e.id, e.title, e.username, totp));
+            let star = if e.highlighted { "★ " } else { "" };
+            out.push_str(&format!("{}\t{}{}\t{}{}\n", e.id, star, e.title, e.username, totp));
         }
     }
     use std::io::Write;
@@ -386,12 +395,52 @@ fn cmd_generate(args: &[String]) -> Result<(), String> {
         .find(|a| !a.starts_with("--"))
         .map(|v| v.parse().map_err(|_| "el largo debe ser un número"))
         .transpose()?
-        .unwrap_or(20);
+        .unwrap_or(16);
     if !(4..=500).contains(&len) {
         return Err("el largo debe estar entre 4 y 500".into());
     }
     let p = input::generate_password(len)?;
     clip::copy(&p, Some(30))?;
     eprintln!("Contraseña de {len} caracteres copiada — se limpia en 30s.");
+    Ok(())
+}
+
+fn cmd_fav(args: &[String]) -> Result<(), String> {
+    let id = require_id(args, "fav")?;
+    let cfg = config::Config::load()?;
+    let title = api::cached_title(id).unwrap_or_else(|| id.to_string());
+    if api::toggle_highlight(&cfg, id)? {
+        eprintln!("★ \"{title}\" marcada como favorita.");
+    } else {
+        eprintln!("\"{title}\" ya no es favorita.");
+    }
+    Ok(())
+}
+
+fn cmd_share(args: &[String]) -> Result<(), String> {
+    let id = require_id(args, "share")?;
+    let clear: u64 = flag_value(args, "--clear")
+        .map(|v| v.parse().map_err(|_| "--clear debe ser segundos"))
+        .transpose()?
+        .unwrap_or(45);
+
+    let cfg = config::Config::load()?;
+    let e = api::get_entry(&cfg, id)?;
+
+    // Formato pensado para pegar en un chat. Contiene la contraseña →
+    // auto-clear obligatorio.
+    let mut text = format!("🍋 {}\n", e.title);
+    if !e.username.is_empty() {
+        text.push_str(&format!("Usuario: {}\n", e.username));
+    }
+    text.push_str(&format!("Contraseña: {}\n", e.password));
+    if !e.url.is_empty() {
+        text.push_str(&format!("URL: {}\n", e.url));
+    }
+    clip::copy(&text, Some(clear))?;
+    eprintln!(
+        "Entrada \"{}\" copiada lista para compartir. El clipboard se limpia en {clear}s — pegala ya.",
+        e.title
+    );
     Ok(())
 }

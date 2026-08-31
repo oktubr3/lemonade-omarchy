@@ -38,7 +38,9 @@ pub fn copy(text: &str, clear_secs: Option<u64>) -> Result<(), String> {
                 "-c",
                 r#"sleep "$LEMONADE_CLEAR_AFTER"; [ "$(wl-paste --no-newline 2>/dev/null)" = "$LEMONADE_CLIP" ] && wl-copy --clear"#,
             ])
-            .env("LEMONADE_CLIP", text)
+            // wl-paste --no-newline recorta el \n final: comparar sin él,
+            // si no un texto multilínea jamás coincide y nunca se limpia.
+            .env("LEMONADE_CLIP", text.trim_end_matches('\n'))
             .env("LEMONADE_CLEAR_AFTER", secs.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::null())

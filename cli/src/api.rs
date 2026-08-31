@@ -16,11 +16,16 @@ pub struct EntryMeta {
     pub username: String,
     pub url: String,
     pub has_totp: bool,
+    #[serde(default)]
+    pub highlighted: bool,
 }
 
 pub struct EntryFull {
     pub password: String,
     pub username: String,
+    pub title: String,
+    pub url: String,
+    pub notes: String,
 }
 
 pub struct TotpCode {
@@ -112,10 +117,15 @@ pub fn list_entries(cfg: &Config, refresh: bool) -> Result<Vec<EntryMeta>, Strin
             username: field_str(fields, "username"),
             url: field_str(fields, "url"),
             has_totp: !fields["totpSecret"].is_null(),
+            highlighted: fields["highlighted"]["booleanValue"].as_bool().unwrap_or(false),
         });
     }
 
-    entries.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    entries.sort_by(|a, b| {
+        b.highlighted
+            .cmp(&a.highlighted)
+            .then(a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+    });
 
     // Cache metadata-only; nunca material cifrado ni descifrado.
     if let Ok(raw) = serde_json::to_string(&entries) {
@@ -145,6 +155,9 @@ pub fn get_entry(cfg: &Config, entry_id: &str) -> Result<EntryFull, String> {
     Ok(EntryFull {
         password: resp["password"].as_str().unwrap_or("").to_string(),
         username: resp["username"].as_str().unwrap_or("").to_string(),
+        title: resp["title"].as_str().unwrap_or("").to_string(),
+        url: resp["url"].as_str().unwrap_or("").to_string(),
+        notes: resp["notes"].as_str().unwrap_or("").to_string(),
     })
 }
 
@@ -275,4 +288,19 @@ pub fn cached_field(cfg: &Config, entry_id: &str, field: &str) -> Result<String,
         return Ok(v);
     }
     lookup(&list_entries(cfg, true)?).ok_or_else(|| "entrada no encontrada".to_string())
+}
+
+/// Alterna el favorito (campo `highlighted`, mismo que la estrella de la web).
+/// Devuelve el estado nuevo.
+pub fn toggle_highlight(cfg: &Config, entry_id: &str) -> Result<bool, String> {
+    let entries = list_entries(cfg, false)?;
+    let entry = entries
+        .iter()
+        .find(|e| e.id == entry_id)
+        .ok_or("entrada no encontrada en el listado")?;
+    let new_state = !entry.highlighted;
+    let mut fields = serde_json::Map::new();
+    fields.insert("highlighted".into(), serde_json::json!(new_state));
+    update_entry(cfg, entry_id, fields)?;
+    Ok(new_state)
 }
