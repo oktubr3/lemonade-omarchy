@@ -605,8 +605,17 @@ fn cmd_note(args: &[String]) -> Result<(), String> {
     let cfg = config::Config::load()?;
     match args.first().map(String::as_str) {
         None | Some("list") => {
-            for n in api::list_notes(&cfg)? {
-                println!("{}\t{}", n.id, n.title);
+            let notes = api::list_notes(&cfg)?;
+            if args.iter().any(|a| a == "--json") {
+                let items: Vec<serde_json::Value> = notes
+                    .iter()
+                    .map(|n| serde_json::json!({ "id": n.id, "title": n.title }))
+                    .collect();
+                println!("{}", serde_json::Value::Array(items));
+            } else {
+                for n in &notes {
+                    println!("{}\t{}", n.id, n.title);
+                }
             }
             Ok(())
         }
@@ -747,8 +756,21 @@ fn cmd_env(args: &[String]) -> Result<(), String> {
                 eprintln!("Sin proyectos en el Env Vault.");
                 return Ok(());
             }
-            for (id, f) in &projects {
-                println!("{}\t{}", id, f["name"]["stringValue"].as_str().unwrap_or("?"));
+            if args.iter().any(|a| a == "--json") {
+                let items: Vec<serde_json::Value> = projects
+                    .iter()
+                    .map(|(id, f)| {
+                        serde_json::json!({
+                            "id": id,
+                            "name": f["name"]["stringValue"].as_str().unwrap_or("?"),
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::Value::Array(items));
+            } else {
+                for (id, f) in &projects {
+                    println!("{}\t{}", id, f["name"]["stringValue"].as_str().unwrap_or("?"));
+                }
             }
             Ok(())
         }
@@ -760,9 +782,19 @@ fn cmd_env(args: &[String]) -> Result<(), String> {
                 "env_variables",
                 &[("userId", &uid), ("projectId", &pid)],
             )?;
-            eprintln!("Proyecto {pname} — {} variables (solo nombres; el valor con env copy):", vars.len());
-            for (_, f) in &vars {
-                println!("{}", f["name"]["stringValue"].as_str().unwrap_or("?"));
+            if args.iter().any(|a| a == "--json") {
+                let items: Vec<serde_json::Value> = vars
+                    .iter()
+                    .map(|(_, f)| {
+                        serde_json::json!({ "name": f["name"]["stringValue"].as_str().unwrap_or("?") })
+                    })
+                    .collect();
+                println!("{}", serde_json::Value::Array(items));
+            } else {
+                eprintln!("Proyecto {pname} — {} variables (solo nombres; el valor con env copy):", vars.len());
+                for (_, f) in &vars {
+                    println!("{}", f["name"]["stringValue"].as_str().unwrap_or("?"));
+                }
             }
             Ok(())
         }

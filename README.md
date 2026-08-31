@@ -14,6 +14,14 @@ Dos piezas:
 
 ## Uso
 
+El panel tiene las **tres pestañas de la web app** — 🔑 Passwords · 🔒 Env
+Vault · 📝 Notas — con `Ctrl+1/2/3` (o `Tab`) para cambiar. Cada pestaña
+tiene su búsqueda, sus atajos (los chips de abajo cambian solos) y su
+contador. En Env Vault: `Enter` abre el proyecto, `Enter` en una variable
+abre la terminal que pide la master password y copia el valor; `Ctrl+S`
+exporta el `.env` del proyecto. En Notas: `Enter` copia el contenido,
+`Ctrl+D` la muestra, `+` crea.
+
 Clic en el 󰌾 de la barra (o IPC: `omarchy-shell ipc call io.github.oktubr3.lemonade toggle`):
 
 ```
