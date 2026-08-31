@@ -247,7 +247,17 @@ Panel {
     open: root.opened
     focusTarget: searchField
     contentWidth: panel.fittedContentWidth(Style.space(420))
-    contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(520))
+    contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(600))
+
+    // Fondo "Lemon Noir": pinta el card completo con el dark-page de la
+    // web app, por encima del fondo del theme del shell (el borde del
+    // card sigue siendo del theme, para no perder la identidad Omarchy).
+    Rectangle {
+      anchors.fill: parent
+      anchors.margins: -panel.padding
+      radius: Style.cornerRadius
+      color: "#0D1117"
+    }
 
     Column {
       id: contentColumn
@@ -501,22 +511,67 @@ Panel {
         font.pixelSize: Style.font.bodySmall
       }
 
+      // Ayuda: chips de teclas estilo footer, con wrap automático.
       Column {
         width: parent.width
         visible: !root.needsLogin
-        Text {
+        spacing: Style.space(6)
+
+        Rectangle {
           width: parent.width
-          text: "↵ contraseña · ctrl+u usuario · ctrl+l URL · alt↵ TOTP · ctrl+s compartir"
-          color: root.lemonMuted
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
+          height: 1
+          color: root.lemonBorder
         }
-        Text {
+
+        Flow {
           width: parent.width
-          text: "ctrl+f ★ · shift↵ tipear · ctrl+e editar · ctrl+⌫ borrar · + crear"
-          color: root.lemonMuted
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
+          spacing: Style.space(8)
+
+          Repeater {
+            model: [
+              { k: "↵", l: "contraseña" },
+              { k: "ctrl u", l: "usuario" },
+              { k: "ctrl l", l: "URL" },
+              { k: "alt ↵", l: "TOTP" },
+              { k: "ctrl s", l: "compartir" },
+              { k: "ctrl f", l: "★" },
+              { k: "shift ↵", l: "tipear" },
+              { k: "ctrl e", l: "editar" },
+              { k: "ctrl ⌫", l: "borrar" }
+            ]
+
+            delegate: Row {
+              required property var modelData
+              spacing: Style.space(4)
+
+              Rectangle {
+                width: keyText.implicitWidth + Style.space(10)
+                height: keyText.implicitHeight + Style.space(4)
+                radius: Style.space(4)
+                color: root.lemonElevated
+                border.color: root.lemonBorder
+                border.width: 1
+                anchors.verticalCenter: parent.verticalCenter
+
+                Text {
+                  id: keyText
+                  anchors.centerIn: parent
+                  text: modelData.k
+                  color: root.lemonGold
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: modelData.l
+                color: root.lemonMuted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
         }
       }
     }

@@ -24,6 +24,8 @@ Ctrl+U     copia el usuario (también Ctrl+↵)
 Ctrl+L     copia la URL
 Alt+↵      copia el código TOTP vigente
 Shift+↵    cierra el panel y tipea la contraseña en la ventana enfocada
+Ctrl+S     copia la entrada formateada para compartir (WhatsApp, etc.)
+Ctrl+F     marca/desmarca favorita (la estrella verde de la web app)
 Ctrl+E     edita la entrada en terminal flotante (también clic derecho)
 Ctrl+⌫     borra — pide confirmación inline (Enter confirma, Esc cancela)
 Esc        cierra (o cancela la confirmación pendiente)
@@ -80,6 +82,13 @@ proyecto GCP de tu Firebase. El "secret" de un cliente Desktop no es
 confidencial (RFC 8252), pero igual vive en tu config local.
 
 Después: `lemonade login` abre el browser, elegís tu cuenta de Google y listo.
+
+## Estética
+
+El panel usa la paleta **Lemon Noir** del modo oscuro de la web app
+(`#FFD700` dorado, `#161B22` cards, `#28A745` verde de favoritas,
+`#0D1117` fondo), con las favoritas primero y su borde verde, contador
+de entradas, y ayuda como chips de teclas.
 
 ## Seguridad
 
