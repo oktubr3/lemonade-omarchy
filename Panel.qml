@@ -196,23 +196,60 @@ Panel {
       width: parent.width
       spacing: Style.space(6)
 
-      Row {
+      Item {
         width: parent.width
-        spacing: Style.space(6)
-        Text {
-          text: "\uf094"
-          color: root.contentForeground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.heading
+        height: Style.space(22)
+
+        Row {
+          spacing: Style.space(6)
           anchors.verticalCenter: parent.verticalCenter
+          Text {
+            text: "\uf094"
+            color: root.contentForeground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.heading
+            anchors.verticalCenter: parent.verticalCenter
+          }
+          Text {
+            text: "Lemonade"
+            color: root.contentForeground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.heading
+            font.bold: true
+            anchors.verticalCenter: parent.verticalCenter
+          }
         }
-        Text {
-          text: "Lemonade"
-          color: root.contentForeground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.heading
-          font.bold: true
+
+        // "+": alta interactiva en terminal flotante (la contraseña se
+        // ingresa oculta ahí; el panel jamás la ve).
+        Rectangle {
+          visible: !root.needsLogin
+          anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
+          width: Style.space(22)
+          height: Style.space(22)
+          radius: Style.space(5)
+          color: addArea.containsMouse ? root.rowFill : "transparent"
+          border.color: addArea.containsMouse ? root.rowBorder : "transparent"
+          border.width: 1
+
+          Text {
+            anchors.centerIn: parent
+            text: "+"
+            color: root.contentForeground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.heading
+          }
+          MouseArea {
+            id: addArea
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: {
+              root.close()
+              Util.execDetached("omarchy-launch-floating-terminal-with-presentation " +
+                "\"lemonade add; echo; echo 'Enter para cerrar'; read -r\"")
+            }
+          }
         }
       }
 

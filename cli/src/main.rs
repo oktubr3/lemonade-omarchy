@@ -12,6 +12,7 @@ mod api;
 mod auth;
 mod clip;
 mod config;
+mod input;
 mod paths;
 
 use std::process::ExitCode;
@@ -30,7 +31,17 @@ USO:
   lemonade totp <id>             Copiar el código TOTP vigente
   lemonade type <id> [--full] [--delay <ms>]
                                  Tipear la contraseña en la ventana enfocada.
-                                 --full tipea usuario<Tab>contraseña";
+                                 --full tipea usuario<Tab>contraseña
+  lemonade add [--title T] [--username U] [--url URL] [--notes N]
+               [--generate [largo]]
+                                 Crear una entrada. Pregunta lo que falte;
+                                 --generate crea la contraseña y la copia
+  lemonade edit <id> [--title T] [--username U] [--url URL] [--notes N]
+                     [--password] [--generate [largo]]
+                                 Editar. Sin flags es interactivo
+                                 (Enter conserva el valor actual)
+  lemonade rm <id> [--yes]       Mandar a la papelera (recuperable en la web)
+  lemonade generate [largo]      Generar contraseña y copiarla (default 20)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -44,6 +55,10 @@ fn main() -> ExitCode {
         "copy" => cmd_copy(&args[1..]),
         "totp" => cmd_totp(&args[1..]),
         "type" => cmd_type(&args[1..]),
+        "add" => cmd_add(&args[1..]),
+        "edit" => cmd_edit(&args[1..]),
+        "rm" | "delete" => cmd_rm(&args[1..]),
+        "generate" | "gen" => cmd_generate(&args[1..]),
         "help" | "--help" | "-h" | "" => {
             println!("{USAGE}");
             Ok(())
@@ -199,5 +214,178 @@ fn cmd_type(args: &[String]) -> Result<(), String> {
     } else {
         clip::type_text(&entry.password)?;
     }
+    Ok(())
+}
+
+/// --generate opcionalmente con largo: "--generate" o "--generate 32".
+fn generate_flag(args: &[String]) -> Result<Option<usize>, String> {
+    let Some(i) = args.iter().position(|a| a == "--generate") else {
+        return Ok(None);
+    };
+    let len = match args.get(i + 1) {
+        Some(v) if !v.starts_with("--") => v
+            .parse()
+            .map_err(|_| "el largo de --generate debe ser un número".to_string())?,
+        _ => 20,
+    };
+    if !(4..=500).contains(&len) {
+        return Err("el largo debe estar entre 4 y 500".into());
+    }
+    Ok(Some(len))
+}
+
+fn cmd_add(args: &[String]) -> Result<(), String> {
+    let cfg = config::Config::load()?;
+
+    let title = match flag_value(args, "--title") {
+        Some(t) => t.to_string(),
+        None => input::prompt("Título", None)?,
+    };
+    if title.is_empty() {
+        return Err("el título es obligatorio".into());
+    }
+    let username = match flag_value(args, "--username") {
+        Some(u) => u.to_string(),
+        None => input::prompt("Usuario (opcional)", Some(""))?,
+    };
+    let url = match flag_value(args, "--url") {
+        Some(u) => u.to_string(),
+        None => input::prompt("URL (opcional)", Some(""))?,
+    };
+    let notes = flag_value(args, "--notes").unwrap_or("").to_string();
+
+    let (password, generated) = match generate_flag(args)? {
+        Some(len) => (input::generate_password(len)?, true),
+        None => {
+            let p1 = input::prompt_hidden("Contraseña")?;
+            if p1.is_empty() {
+                return Err("la contraseña es obligatoria (o usá --generate)".into());
+            }
+            let p2 = input::prompt_hidden("Repetir contraseña")?;
+            if p1 != p2 {
+                return Err("no coinciden".into());
+            }
+            (p1, false)
+        }
+    };
+
+    let id = api::create_entry(
+        &cfg,
+        &api::NewEntry { title: title.clone(), username, password: password.clone(), url, notes },
+    )?;
+
+    if generated {
+        clip::copy(&password, Some(30))?;
+        eprintln!("Creada \"{title}\" ({id}). Contraseña generada y copiada — se limpia en 30s.");
+    } else {
+        eprintln!("Creada \"{title}\" ({id}).");
+    }
+    Ok(())
+}
+
+fn cmd_edit(args: &[String]) -> Result<(), String> {
+    let id = require_id(args, "edit")?;
+    let cfg = config::Config::load()?;
+
+    let mut fields = serde_json::Map::new();
+    let has_flags = args.iter().any(|a| a.starts_with("--"));
+
+    if has_flags {
+        for (flag, key) in [("--title", "title"), ("--username", "username"), ("--url", "url"), ("--notes", "notes")] {
+            if let Some(v) = flag_value(args, flag) {
+                fields.insert(key.into(), serde_json::json!(v));
+            }
+        }
+        if let Some(len) = generate_flag(args)? {
+            let p = input::generate_password(len)?;
+            clip::copy(&p, Some(30))?;
+            eprintln!("Contraseña nueva generada y copiada — se limpia en 30s.");
+            fields.insert("password".into(), serde_json::json!(p));
+        } else if args.iter().any(|a| a == "--password") {
+            let p1 = input::prompt_hidden("Contraseña nueva")?;
+            let p2 = input::prompt_hidden("Repetir")?;
+            if p1 != p2 {
+                return Err("no coinciden".into());
+            }
+            if !p1.is_empty() {
+                fields.insert("password".into(), serde_json::json!(p1));
+            }
+        }
+    } else {
+        // Interactivo: metadata actual como default; Enter conserva.
+        let metas = api::list_entries(&cfg, false)?;
+        let meta = metas.iter().find(|e| e.id == id).ok_or("id no encontrado en el listado")?;
+        eprintln!("Editando \"{}\" — Enter conserva el valor actual.", meta.title);
+
+        let title = input::prompt("Título", Some(&meta.title))?;
+        if !title.is_empty() && title != meta.title {
+            fields.insert("title".into(), serde_json::json!(title));
+        }
+        let username = input::prompt("Usuario", Some(&meta.username))?;
+        if username != meta.username {
+            fields.insert("username".into(), serde_json::json!(username));
+        }
+        let url = input::prompt("URL", Some(&meta.url))?;
+        if url != meta.url {
+            fields.insert("url".into(), serde_json::json!(url));
+        }
+        if input::confirm("¿Cambiar la contraseña?")? {
+            if input::confirm("¿Generarla automáticamente?")? {
+                let p = input::generate_password(20)?;
+                clip::copy(&p, Some(30))?;
+                eprintln!("Generada y copiada — se limpia en 30s.");
+                fields.insert("password".into(), serde_json::json!(p));
+            } else {
+                let p1 = input::prompt_hidden("Contraseña nueva")?;
+                let p2 = input::prompt_hidden("Repetir")?;
+                if p1 != p2 {
+                    return Err("no coinciden".into());
+                }
+                if !p1.is_empty() {
+                    fields.insert("password".into(), serde_json::json!(p1));
+                }
+            }
+        }
+    }
+
+    if fields.is_empty() {
+        eprintln!("Sin cambios.");
+        return Ok(());
+    }
+    let changed: Vec<&str> = fields.keys().map(String::as_str).collect();
+    let resumen = changed.join(", ");
+    api::update_entry(&cfg, id, fields)?;
+    eprintln!("Actualizado: {resumen}.");
+    Ok(())
+}
+
+fn cmd_rm(args: &[String]) -> Result<(), String> {
+    let id = require_id(args, "rm")?;
+    let cfg = config::Config::load()?;
+    let yes = args.iter().any(|a| a == "--yes" || a == "-y");
+
+    let title = api::cached_title(id).unwrap_or_else(|| id.to_string());
+    if !yes && !input::confirm(&format!("¿Mandar \"{title}\" a la papelera?"))? {
+        eprintln!("Cancelado.");
+        return Ok(());
+    }
+    api::delete_entry(&cfg, id)?;
+    eprintln!("\"{title}\" en la papelera (recuperable desde la web app; se purga a los 30 días).");
+    Ok(())
+}
+
+fn cmd_generate(args: &[String]) -> Result<(), String> {
+    let len: usize = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .map(|v| v.parse().map_err(|_| "el largo debe ser un número"))
+        .transpose()?
+        .unwrap_or(20);
+    if !(4..=500).contains(&len) {
+        return Err("el largo debe estar entre 4 y 500".into());
+    }
+    let p = input::generate_password(len)?;
+    clip::copy(&p, Some(30))?;
+    eprintln!("Contraseña de {len} caracteres copiada — se limpia en 30s.");
     Ok(())
 }

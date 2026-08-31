@@ -171,3 +171,92 @@ pub fn get_totp(cfg: &Config, entry_id: &str) -> Result<TotpCode, String> {
         time_remaining: resp["timeRemaining"].as_u64().unwrap_or(30),
     })
 }
+
+// --- escritura ---
+
+pub struct NewEntry {
+    pub title: String,
+    pub username: String,
+    pub password: String,
+    pub url: String,
+    pub notes: String,
+}
+
+fn post_fn(cfg: &Config, name: &str, body: serde_json::Value) -> Result<serde_json::Value, String> {
+    let token = auth::get_id_token(cfg)?;
+    ureq::post(&format!("{}/{name}", cfg.functions_url))
+        .set("Authorization", &format!("Bearer {token}"))
+        .send_json(body)
+        .map_err(|e| match e {
+            ureq::Error::Status(404, _) => "entrada no encontrada".to_string(),
+            ureq::Error::Status(429, _) => "rate limit del server — esperá un minuto".to_string(),
+            ureq::Error::Status(400, resp) => {
+                let msg = resp
+                    .into_json::<serde_json::Value>()
+                    .ok()
+                    .and_then(|v| v["error"].as_str().map(String::from))
+                    .unwrap_or_else(|| "petición inválida".into());
+                format!("el server rechazó la petición: {msg}")
+            }
+            other => format!("{name}: {}", auth::short_http_err(other)),
+        })?
+        .into_json()
+        .map_err(|e| format!("respuesta ilegible: {e}"))
+}
+
+/// Refresca el cache tras una mutación; si falla no es fatal.
+fn refresh_cache_best_effort(cfg: &Config) {
+    let _ = list_entries(cfg, true);
+}
+
+pub fn create_entry(cfg: &Config, e: &NewEntry) -> Result<String, String> {
+    let resp = post_fn(
+        cfg,
+        "createPasswordEntryHttp",
+        serde_json::json!({
+            "title": e.title,
+            "username": e.username,
+            "password": e.password,
+            "url": e.url,
+            "notes": e.notes,
+        }),
+    )?;
+    let id = resp["entryId"]
+        .as_str()
+        .ok_or("el server no devolvió entryId")?
+        .to_string();
+    refresh_cache_best_effort(cfg);
+    Ok(id)
+}
+
+/// Actualiza solo los campos presentes en `fields`
+/// (permitidos por el server: title, username, password, url, notes).
+pub fn update_entry(
+    cfg: &Config,
+    entry_id: &str,
+    fields: serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    if fields.is_empty() {
+        return Err("nada que actualizar".into());
+    }
+    let mut body = serde_json::Value::Object(fields);
+    body["entryId"] = serde_json::json!(entry_id);
+    post_fn(cfg, "updatePasswordEntryHttp", body)?;
+    refresh_cache_best_effort(cfg);
+    Ok(())
+}
+
+/// Borrado suave: la entrada va a la papelera de Lemonade
+/// (recuperable desde la web app; se purga sola a los 30 días).
+pub fn delete_entry(cfg: &Config, entry_id: &str) -> Result<(), String> {
+    post_fn(cfg, "deletePasswordEntryHttp", serde_json::json!({ "entryId": entry_id }))?;
+    refresh_cache_best_effort(cfg);
+    Ok(())
+}
+
+/// Busca en el cache local el título de una entrada (para confirmaciones).
+pub fn cached_title(entry_id: &str) -> Option<String> {
+    let raw = std::fs::read_to_string(cache_path()).ok()?;
+    let entries: Vec<EntryMeta> = serde_json::from_str(&raw).ok()?;
+    entries.into_iter().find(|e| e.id == entry_id).map(|e| e.title)
+}

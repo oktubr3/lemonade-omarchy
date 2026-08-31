@@ -34,7 +34,14 @@ lemonade list           # listado (metadata, cacheado)
 lemonade copy <id>      # contraseña → clipboard, auto-clear 30s
 lemonade totp <id>      # código TOTP → clipboard
 lemonade type <id>      # tipea en la ventana enfocada (--full: usuario⇥contraseña)
+lemonade add            # crear (interactivo; --generate crea y copia la contraseña)
+lemonade edit <id>      # editar (interactivo, Enter conserva; o por flags)
+lemonade rm <id>        # a la papelera de Lemonade (recuperable; se purga a los 30 días)
+lemonade generate 24    # generar contraseña y copiarla, sin crear entrada
 ```
+
+El **+** del panel abre el alta interactiva en una terminal flotante — la
+contraseña se ingresa ahí con el eco apagado; el panel jamás la ve.
 
 ## Instalación
 
