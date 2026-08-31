@@ -80,3 +80,8 @@ pub fn generate_password(len: usize) -> Result<String, String> {
     }
     Ok(out)
 }
+
+/// ¿Hay terminal interactiva disponible?
+pub fn has_tty() -> bool {
+    std::fs::File::open("/dev/tty").is_ok()
+}

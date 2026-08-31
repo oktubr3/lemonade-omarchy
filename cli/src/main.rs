@@ -237,20 +237,25 @@ fn generate_flag(args: &[String]) -> Result<Option<usize>, String> {
 fn cmd_add(args: &[String]) -> Result<(), String> {
     let cfg = config::Config::load()?;
 
+    let interactive = input::has_tty();
     let title = match flag_value(args, "--title") {
         Some(t) => t.to_string(),
-        None => input::prompt("Título", None)?,
+        None if interactive => input::prompt("Título", None)?,
+        None => return Err("falta --title (no hay terminal para preguntar)".into()),
     };
     if title.is_empty() {
         return Err("el título es obligatorio".into());
     }
+    // Los opcionales solo se preguntan si hay terminal; sin ella quedan vacíos.
     let username = match flag_value(args, "--username") {
         Some(u) => u.to_string(),
-        None => input::prompt("Usuario (opcional)", Some(""))?,
+        None if interactive => input::prompt("Usuario (opcional)", Some(""))?,
+        None => String::new(),
     };
     let url = match flag_value(args, "--url") {
         Some(u) => u.to_string(),
-        None => input::prompt("URL (opcional)", Some(""))?,
+        None if interactive => input::prompt("URL (opcional)", Some(""))?,
+        None => String::new(),
     };
     let notes = flag_value(args, "--notes").unwrap_or("").to_string();
 
