@@ -26,7 +26,7 @@ USO:
   lemonade status                Estado de la sesión y del cache
   lemonade list [--json] [--refresh]
                                  Listar entradas (metadata). --refresh fuerza red
-  lemonade copy <id> [--field password|username] [--clear <segs>]
+  lemonade copy <id> [--field password|username|url] [--clear <segs>]
                                  Copiar al clipboard (auto-clear, default 30s)
   lemonade totp <id>             Copiar el código TOTP vigente
   lemonade type <id> [--full] [--delay <ms>]
@@ -152,24 +152,25 @@ fn cmd_copy(args: &[String]) -> Result<(), String> {
         .unwrap_or(30);
 
     let cfg = config::Config::load()?;
-    let entry = api::get_entry(&cfg, id)?;
 
+    // username y url son metadata: salen del cache, sin viaje al server.
     let value = match field {
-        "password" => entry.password,
-        "username" => entry.username,
-        other => return Err(format!("--field inválido: {other} (password|username)")),
+        "password" => api::get_entry(&cfg, id)?.password,
+        "username" | "url" => api::cached_field(&cfg, id, field)?,
+        other => return Err(format!("--field inválido: {other} (password|username|url)")),
     };
     if value.is_empty() {
         return Err(format!("la entrada no tiene {field}"));
     }
 
-    // El username no es secreto: copiar sin auto-clear.
+    // Solo la contraseña es secreta: el resto se copia sin auto-clear.
     let clear = if field == "password" { Some(clear) } else { None };
     clip::copy(&value, clear)?;
 
-    match clear {
-        Some(s) => eprintln!("Contraseña copiada. El clipboard se limpia en {s}s."),
-        None => eprintln!("Usuario copiado."),
+    match field {
+        "password" => eprintln!("Contraseña copiada. El clipboard se limpia en {}s.", clear.unwrap()),
+        "username" => eprintln!("Usuario copiado."),
+        _ => eprintln!("URL copiada."),
     }
     Ok(())
 }

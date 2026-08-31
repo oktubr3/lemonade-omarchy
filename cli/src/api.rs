@@ -260,3 +260,19 @@ pub fn cached_title(entry_id: &str) -> Option<String> {
     let entries: Vec<EntryMeta> = serde_json::from_str(&raw).ok()?;
     entries.into_iter().find(|e| e.id == entry_id).map(|e| e.title)
 }
+
+/// Campo de metadata (username/url) desde el cache local — sin tocar el
+/// server. Si el id no está en cache, refresca una vez y reintenta.
+pub fn cached_field(cfg: &Config, entry_id: &str, field: &str) -> Result<String, String> {
+    let lookup = |entries: &[EntryMeta]| -> Option<String> {
+        entries.iter().find(|e| e.id == entry_id).map(|e| match field {
+            "username" => e.username.clone(),
+            "url" => e.url.clone(),
+            _ => String::new(),
+        })
+    };
+    if let Some(v) = lookup(&list_entries(cfg, false)?) {
+        return Ok(v);
+    }
+    lookup(&list_entries(cfg, true)?).ok_or_else(|| "entrada no encontrada".to_string())
+}

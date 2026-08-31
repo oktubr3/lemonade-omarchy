@@ -20,7 +20,8 @@ Clic en el 󰌾 de la barra (o IPC: `omarchy-shell ipc call io.github.oktubr3.le
 escribir   filtra
 ↑/↓        navega
 Enter      copia la contraseña (el clipboard se limpia solo a los 30s)
-Ctrl+↵     copia el usuario
+Ctrl+U     copia el usuario (también Ctrl+↵)
+Ctrl+L     copia la URL
 Alt+↵      copia el código TOTP vigente
 Shift+↵    cierra el panel y tipea la contraseña en la ventana enfocada
 Ctrl+E     edita la entrada en terminal flotante (también clic derecho)
@@ -34,6 +35,7 @@ El CLI también se usa solo:
 lemonade login          # OAuth de Google en el browser, una sola vez
 lemonade list           # listado (metadata, cacheado)
 lemonade copy <id>      # contraseña → clipboard, auto-clear 30s
+                        #   --field username|url copia metadata (sin auto-clear)
 lemonade totp <id>      # código TOTP → clipboard
 lemonade type <id>      # tipea en la ventana enfocada (--full: usuario⇥contraseña)
 lemonade add            # crear (interactivo; --generate crea y copia la contraseña)

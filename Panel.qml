@@ -94,6 +94,13 @@ Panel {
     runAction(["copy", e.id, "--field", "username"], false)
   }
 
+  function copyUrl() {
+    var e = current(); if (!e) return
+    if (!e.url || e.url === "") { statusText = e.title + " no tiene URL"; return }
+    statusText = "Copiando URL de " + e.title + "…"
+    runAction(["copy", e.id, "--field", "url"], false)
+  }
+
   function copyTotp() {
     var e = current(); if (!e) return
     if (!e.has_totp) { statusText = e.title + " no tiene TOTP"; return }
@@ -302,10 +309,10 @@ Panel {
           else event.accepted = false   // Delete a secas sigue editando el texto
         }
         Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_E && (event.modifiers & Qt.ControlModifier)) {
-            root.editEntry()
-            event.accepted = true
-          }
+          if (!(event.modifiers & Qt.ControlModifier)) return
+          if (event.key === Qt.Key_E) { root.editEntry(); event.accepted = true }
+          else if (event.key === Qt.Key_U) { root.copyUsername(); event.accepted = true }
+          else if (event.key === Qt.Key_L) { root.copyUrl(); event.accepted = true }
         }
         function dispatchEnter(mods) {
           if (root.pendingDelete) { root.confirmDelete(); return }
@@ -432,14 +439,14 @@ Panel {
         visible: !root.needsLogin
         Text {
           width: parent.width
-          text: "↵ contraseña · ctrl↵ usuario · alt↵ TOTP · shift↵ tipear"
+          text: "↵ contraseña · ctrl+u usuario · ctrl+l URL · alt↵ TOTP"
           color: root.mutedForeground
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
         }
         Text {
           width: parent.width
-          text: "ctrl+e / clic der. editar · ctrl+⌫ borrar · + crear"
+          text: "shift↵ tipear · ctrl+e editar · ctrl+⌫ borrar · + crear"
           color: root.mutedForeground
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
