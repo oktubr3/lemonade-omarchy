@@ -405,6 +405,7 @@ Panel {
       ListView {
         id: entryList
         width: parent.width
+        spacing: Style.space(4)
         height: Math.min(contentHeight, Style.space(360))
         visible: !root.needsLogin
         clip: true
