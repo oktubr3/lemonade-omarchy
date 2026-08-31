@@ -23,7 +23,9 @@ Enter      copia la contraseña (el clipboard se limpia solo a los 30s)
 Ctrl+↵     copia el usuario
 Alt+↵      copia el código TOTP vigente
 Shift+↵    cierra el panel y tipea la contraseña en la ventana enfocada
-Esc        cierra
+Ctrl+E     edita la entrada en terminal flotante (también clic derecho)
+Ctrl+⌫     borra — pide confirmación inline (Enter confirma, Esc cancela)
+Esc        cierra (o cancela la confirmación pendiente)
 ```
 
 El CLI también se usa solo:

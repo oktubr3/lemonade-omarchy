@@ -39,6 +39,7 @@ Panel {
 
   onOpenedChanged: {
     if (opened) {
+      pendingDelete = null
       statusText = ""
       needsLogin = false
       searchField.text = ""
@@ -98,6 +99,35 @@ Panel {
     if (!e.has_totp) { statusText = e.title + " no tiene TOTP"; return }
     statusText = "Pidiendo TOTP de " + e.title + "…"
     runAction(["totp", e.id], false)
+  }
+
+  property var pendingDelete: null
+
+  function armDelete() {
+    var e = current(); if (!e) return
+    pendingDelete = e
+    statusText = "¿Mandar \"" + e.title + "\" a la papelera?  Enter confirma · Esc cancela"
+  }
+
+  function cancelDelete() {
+    if (!pendingDelete) return
+    pendingDelete = null
+    statusText = ""
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return
+    var e = pendingDelete
+    pendingDelete = null
+    statusText = "Borrando \"" + e.title + "\"…"
+    runAction(["rm", e.id, "--yes"], false)
+  }
+
+  function editEntry() {
+    var e = current(); if (!e) return
+    root.close()
+    Util.execDetached("omarchy-launch-floating-terminal-with-presentation " +
+      "\"lemonade edit " + e.id + "; echo; echo 'Enter para cerrar'; read -r\"")
   }
 
   function autotype() {
@@ -166,6 +196,7 @@ Panel {
       if (exitCode === 0) {
         root.statusText = msg !== "" ? msg : "Listo."
         statusClear.restart()
+        if (!listProc.running) { listProc.refresh = false; listProc.running = true }
       } else {
         root.statusText = msg !== "" ? msg : "Falló el comando"
       }
@@ -258,12 +289,26 @@ Panel {
         width: parent.width
         placeholderText: root.needsLogin ? "Sin sesión" : "Buscar…"
         enabled: !root.needsLogin
-        onTextChanged: { root.selectedIndex = 0; root.applyFilter() }
+        onTextChanged: { root.cancelDelete(); root.selectedIndex = 0; root.applyFilter() }
 
-        Keys.onUpPressed: root.move(-1)
-        Keys.onDownPressed: root.move(1)
-        Keys.onEscapePressed: root.close()
+        Keys.onUpPressed: { root.cancelDelete(); root.move(-1) }
+        Keys.onDownPressed: { root.cancelDelete(); root.move(1) }
+        Keys.onEscapePressed: {
+          if (root.pendingDelete) root.cancelDelete()
+          else root.close()
+        }
+        Keys.onDeletePressed: function(event) {
+          if (event.modifiers & Qt.ControlModifier) root.armDelete()
+          else event.accepted = false   // Delete a secas sigue editando el texto
+        }
+        Keys.onPressed: function(event) {
+          if (event.key === Qt.Key_E && (event.modifiers & Qt.ControlModifier)) {
+            root.editEntry()
+            event.accepted = true
+          }
+        }
         function dispatchEnter(mods) {
+          if (root.pendingDelete) { root.confirmDelete(); return }
           if (mods & Qt.ShiftModifier) root.autotype()
           else if (mods & Qt.ControlModifier) root.copyUsername()
           else if (mods & Qt.AltModifier) root.copyTotp()
@@ -312,8 +357,13 @@ Panel {
           MouseArea {
             anchors.fill: parent
             hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             onEntered: root.selectedIndex = index
-            onClicked: { root.selectedIndex = index; root.copyPassword() }
+            onClicked: function(mouse) {
+              root.selectedIndex = index
+              if (mouse.button === Qt.RightButton) root.editEntry()
+              else root.copyPassword()
+            }
           }
 
           Row {
@@ -372,18 +422,28 @@ Panel {
         visible: root.statusText !== ""
         wrapMode: Text.WordWrap
         text: root.statusText
-        color: root.mutedForeground
+        color: root.pendingDelete ? Color.urgent : root.mutedForeground
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
 
-      Text {
+      Column {
         width: parent.width
         visible: !root.needsLogin
-        text: "↵ contraseña · ctrl↵ usuario · alt↵ TOTP · shift↵ tipear"
-        color: root.mutedForeground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
+        Text {
+          width: parent.width
+          text: "↵ contraseña · ctrl↵ usuario · alt↵ TOTP · shift↵ tipear"
+          color: root.mutedForeground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+        Text {
+          width: parent.width
+          text: "ctrl+e / clic der. editar · ctrl+⌫ borrar · + crear"
+          color: root.mutedForeground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
       }
     }
   }
