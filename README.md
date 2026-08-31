@@ -44,7 +44,23 @@ lemonade add            # crear (interactivo; --generate crea y copia la contras
 lemonade edit <id>      # editar (interactivo, Enter conserva; o por flags)
 lemonade rm <id>        # a la papelera de Lemonade (recuperable; se purga a los 30 días)
 lemonade generate 24    # generar contraseña y copiarla, sin crear entrada
+lemonade show <id>      # ficha completa: campos custom, notas, TOTP
+lemonade history <id>   # historial de contraseñas (--copy N copia una vieja)
+lemonade send <id> <email>       # compartir a otro usuario Lemonade
+lemonade shares [accept|reject]  # compartidas pendientes
+lemonade note list|show|copy|add|edit|rm   # notas seguras
+lemonade trash [restore|purge]             # papelera
+lemonade env projects|vars|copy|export     # Env Vault (zero-knowledge)
 ```
+
+### Env Vault
+
+El compartimento zero-knowledge funciona igual que en la web: la master
+password se pide oculta en cada uso, la clave se deriva **localmente**
+(PBKDF2-SHA256 600k → HKDF, réplica exacta del `cryptoWorker` de la web,
+verificada bit a bit contra WebCrypto) y ni la password ni la clave tocan
+disco jamás. Requiere vault con verifier v3 (los viejos migran solos al
+desbloquearse una vez en la web).
 
 El **+** del panel abre el alta interactiva en una terminal flotante — la
 contraseña se ingresa ahí con el eco apagado; el panel jamás la ve.

@@ -150,6 +150,13 @@ Panel {
     runAction(["rm", e.id, "--yes"], false)
   }
 
+  function showDetail() {
+    var e = current(); if (!e) return
+    root.close()
+    Util.execDetached("omarchy-launch-floating-terminal-with-presentation " +
+      "\"lemonade show " + e.id + "; echo; echo 'Enter para cerrar'; read -r\"")
+  }
+
   function editEntry() {
     var e = current(); if (!e) return
     root.close()
@@ -367,6 +374,7 @@ Panel {
           else if (event.key === Qt.Key_L) { root.copyUrl(); event.accepted = true }
           else if (event.key === Qt.Key_F) { root.toggleFav(); event.accepted = true }
           else if (event.key === Qt.Key_S) { root.shareEntry(); event.accepted = true }
+          else if (event.key === Qt.Key_D) { root.showDetail(); event.accepted = true }
         }
         function dispatchEnter(mods) {
           if (root.pendingDelete) { root.confirmDelete(); return }
@@ -537,6 +545,7 @@ Panel {
               { k: "ctrl f", l: "★" },
               { k: "shift ↵", l: "tipear" },
               { k: "ctrl e", l: "editar" },
+              { k: "ctrl d", l: "detalle" },
               { k: "ctrl ⌫", l: "borrar" }
             ]
 

@@ -117,3 +117,20 @@ pub fn generate_password(len: usize) -> Result<String, String> {
 pub fn has_tty() -> bool {
     std::fs::File::open("/dev/tty").is_ok()
 }
+
+/// Lee líneas de /dev/tty hasta una línea que sea solo ".".
+pub fn read_multiline() -> Result<String, String> {
+    use std::io::BufRead;
+    let f = std::fs::File::open("/dev/tty")
+        .map_err(|_| "no hay terminal interactiva".to_string())?;
+    let mut out = String::new();
+    for line in std::io::BufReader::new(f).lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        if line.trim() == "." {
+            break;
+        }
+        out.push_str(&line);
+        out.push('\n');
+    }
+    Ok(out)
+}

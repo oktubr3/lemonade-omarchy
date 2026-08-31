@@ -26,6 +26,8 @@ pub struct EntryFull {
     pub title: String,
     pub url: String,
     pub notes: String,
+    /// (label, valor descifrado, tipo)
+    pub custom_fields: Vec<(String, String, String)>,
 }
 
 pub struct TotpCode {
@@ -158,6 +160,20 @@ pub fn get_entry(cfg: &Config, entry_id: &str) -> Result<EntryFull, String> {
         title: resp["title"].as_str().unwrap_or("").to_string(),
         url: resp["url"].as_str().unwrap_or("").to_string(),
         notes: resp["notes"].as_str().unwrap_or("").to_string(),
+        custom_fields: resp["customFields"]
+            .as_array()
+            .map(|fs| {
+                fs.iter()
+                    .map(|f| {
+                        (
+                            f["label"].as_str().unwrap_or("").to_string(),
+                            f["value"].as_str().unwrap_or("").to_string(),
+                            f["type"].as_str().unwrap_or("text").to_string(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -303,4 +319,208 @@ pub fn toggle_highlight(cfg: &Config, entry_id: &str) -> Result<bool, String> {
     fields.insert("highlighted".into(), serde_json::json!(new_state));
     update_entry(cfg, entry_id, fields)?;
     Ok(new_state)
+}
+
+// --- notas seguras ---
+
+pub struct NoteMeta {
+    pub id: String,
+    pub title: String,
+}
+
+pub fn list_notes(cfg: &Config) -> Result<Vec<NoteMeta>, String> {
+    let resp = post_fn(cfg, "getSecureNotesHttp", serde_json::json!({}))?;
+    Ok(resp["notes"]
+        .as_array()
+        .map(|ns| {
+            ns.iter()
+                .map(|n| NoteMeta {
+                    id: n["id"].as_str().unwrap_or("").to_string(),
+                    title: n["title"].as_str().unwrap_or("").to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// Devuelve (título, contenido descifrado).
+pub fn get_note(cfg: &Config, note_id: &str) -> Result<(String, String), String> {
+    let resp = post_fn(cfg, "getSecureNoteHttp", serde_json::json!({ "noteId": note_id }))?;
+    let n = &resp["note"];
+    Ok((
+        n["title"].as_str().unwrap_or("").to_string(),
+        n["content"].as_str().unwrap_or("").to_string(),
+    ))
+}
+
+pub fn create_note(cfg: &Config, title: &str, content: &str) -> Result<String, String> {
+    let resp = post_fn(
+        cfg,
+        "createSecureNoteHttp",
+        serde_json::json!({ "title": title, "content": content }),
+    )?;
+    Ok(resp["noteId"]
+        .as_str()
+        .or_else(|| resp["id"].as_str())
+        .unwrap_or("?")
+        .to_string())
+}
+
+pub fn update_note(
+    cfg: &Config,
+    note_id: &str,
+    title: Option<&str>,
+    content: Option<&str>,
+) -> Result<(), String> {
+    let mut body = serde_json::json!({ "noteId": note_id });
+    if let Some(t) = title {
+        body["title"] = serde_json::json!(t);
+    }
+    if let Some(c) = content {
+        body["content"] = serde_json::json!(c);
+    }
+    post_fn(cfg, "updateSecureNoteHttp", body)?;
+    Ok(())
+}
+
+pub fn delete_note(cfg: &Config, note_id: &str) -> Result<(), String> {
+    post_fn(cfg, "deleteSecureNoteHttp", serde_json::json!({ "noteId": note_id }))?;
+    Ok(())
+}
+
+// --- papelera ---
+
+pub struct TrashEntry {
+    pub id: String,
+    pub title: String,
+    pub username: String,
+    pub deleted_at: String,
+}
+
+pub fn list_trash(cfg: &Config) -> Result<Vec<TrashEntry>, String> {
+    let resp = post_fn(cfg, "getTrashEntriesHttp", serde_json::json!({}))?;
+    Ok(resp["entries"]
+        .as_array()
+        .map(|es| {
+            es.iter()
+                .map(|e| TrashEntry {
+                    id: e["id"].as_str().unwrap_or("").to_string(),
+                    title: e["title"].as_str().unwrap_or("Sin nombre").to_string(),
+                    username: e["username"].as_str().unwrap_or("").to_string(),
+                    deleted_at: e["deletedAt"]["_seconds"]
+                        .as_i64()
+                        .map(|s| format!("{s}"))
+                        .or_else(|| e["deletedAt"].as_str().map(String::from))
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+pub fn restore_entry(cfg: &Config, entry_id: &str) -> Result<(), String> {
+    post_fn(cfg, "restorePasswordEntryHttp", serde_json::json!({ "entryId": entry_id }))?;
+    refresh_cache_best_effort(cfg);
+    Ok(())
+}
+
+pub fn purge_entry(cfg: &Config, entry_id: &str) -> Result<(), String> {
+    post_fn(
+        cfg,
+        "permanentDeletePasswordEntryHttp",
+        serde_json::json!({ "entryId": entry_id }),
+    )?;
+    Ok(())
+}
+
+// --- compartir a usuarios Lemonade ---
+
+pub struct SystemUser {
+    pub user_id: String,
+    pub email: String,
+    pub display_name: String,
+}
+
+/// Búsqueda por email EXACTO (el server previene enumeración de usuarios).
+pub fn find_user(cfg: &Config, email: &str) -> Result<Option<SystemUser>, String> {
+    let resp = post_fn(cfg, "getSystemUsersHttp", serde_json::json!({ "searchQuery": email }))?;
+    Ok(resp["users"].as_array().and_then(|us| {
+        us.iter()
+            .find(|u| u["email"].as_str().unwrap_or("").eq_ignore_ascii_case(email))
+            .map(|u| SystemUser {
+                user_id: u["userId"]
+                    .as_str()
+                    .or_else(|| u["id"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                email: u["email"].as_str().unwrap_or("").to_string(),
+                display_name: u["displayName"].as_str().unwrap_or("").to_string(),
+            })
+    }))
+}
+
+pub fn share_to_user(cfg: &Config, entry_id: &str, to_user_id: &str) -> Result<(), String> {
+    post_fn(
+        cfg,
+        "sharePasswordEntryHttp",
+        serde_json::json!({ "entryId": entry_id, "toUserId": to_user_id }),
+    )?;
+    Ok(())
+}
+
+pub struct PendingShare {
+    pub id: String,
+    pub title: String,
+    pub from_name: String,
+    pub from_email: String,
+}
+
+pub fn pending_shares(cfg: &Config) -> Result<Vec<PendingShare>, String> {
+    let resp = post_fn(cfg, "getPendingSharedPasswordsHttp", serde_json::json!({}))?;
+    Ok(resp["pendingShares"]
+        .as_array()
+        .map(|ss| {
+            ss.iter()
+                .map(|s| PendingShare {
+                    id: s["id"].as_str().unwrap_or("").to_string(),
+                    title: s["title"].as_str().unwrap_or("Sin nombre").to_string(),
+                    from_name: s["fromUserName"].as_str().unwrap_or("").to_string(),
+                    from_email: s["fromUserEmail"].as_str().unwrap_or("").to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+pub fn accept_share(cfg: &Config, share_id: &str) -> Result<(), String> {
+    post_fn(cfg, "acceptSharedPasswordHttp", serde_json::json!({ "shareId": share_id }))?;
+    refresh_cache_best_effort(cfg);
+    Ok(())
+}
+
+pub fn reject_share(cfg: &Config, share_id: &str) -> Result<(), String> {
+    post_fn(cfg, "rejectSharedPasswordHttp", serde_json::json!({ "shareId": share_id }))?;
+    Ok(())
+}
+
+// --- historial de contraseñas ---
+
+pub struct HistoryItem {
+    pub password: String,
+    pub changed_at: String,
+}
+
+pub fn password_history(cfg: &Config, entry_id: &str) -> Result<Vec<HistoryItem>, String> {
+    let resp = post_fn(cfg, "getPasswordHistoryHttp", serde_json::json!({ "entryId": entry_id }))?;
+    Ok(resp["history"]
+        .as_array()
+        .map(|hs| {
+            hs.iter()
+                .map(|h| HistoryItem {
+                    password: h["password"].as_str().unwrap_or("").to_string(),
+                    changed_at: h["changedAt"].as_str().unwrap_or("¿?").to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default())
 }

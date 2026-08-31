@@ -12,6 +12,7 @@ mod api;
 mod auth;
 mod clip;
 mod config;
+mod env;
 mod input;
 mod paths;
 
@@ -20,33 +21,46 @@ use std::process::ExitCode;
 const USAGE: &str = "\
 lemonade — Lemonade Password Manager CLI
 
-USO:
-  lemonade login                 Iniciar sesión con Google (abre el browser)
-  lemonade logout                Borrar tokens locales
-  lemonade status                Estado de la sesión y del cache
-  lemonade list [--json] [--refresh]
-                                 Listar entradas (metadata). --refresh fuerza red
-  lemonade copy <id> [--field password|username|url] [--clear <segs>]
-                                 Copiar al clipboard (auto-clear, default 30s)
-  lemonade totp <id>             Copiar el código TOTP vigente
-  lemonade type <id> [--full] [--delay <ms>]
-                                 Tipear la contraseña en la ventana enfocada.
-                                 --full tipea usuario<Tab>contraseña
-  lemonade add [--title T] [--username U] [--url URL] [--notes N]
-               [--generate [largo]]
-                                 Crear una entrada. Pregunta lo que falte;
-                                 --generate crea la contraseña y la copia
-  lemonade edit <id> [--title T] [--username U] [--url URL] [--notes N]
-                     [--password] [--generate [largo]]
-                                 Editar. Sin flags es interactivo
-                                 (Enter conserva el valor actual)
-  lemonade rm <id> [--yes]       Mandar a la papelera (recuperable en la web)
-  lemonade fav <id>              Marcar/desmarcar favorito (estrella de la web)
-  lemonade share <id> [--clear <segs>]
-                                 Copiar la entrada formateada para compartir
-                                 (WhatsApp, etc.) — auto-clear default 45s
-  lemonade generate [largo]      Generar contraseña y copiarla (default 16,
-                                 mismo formato que el generador de la web)";
+SESIÓN
+  login | logout | status
+
+CONTRASEÑAS
+  list [--json] [--refresh]      Listar (★ favoritas primero)
+  copy <id> [--field password|username|url] [--custom <label>] [--clear <segs>]
+  totp <id>                      Código TOTP → clipboard
+  type <id> [--full] [--delay <ms>]   Tipear en la ventana enfocada
+  show <id>                      Ficha completa (campos custom, notas, TOTP)
+  add [--title T] [--username U] [--url URL] [--generate [largo]]
+  edit <id> [flags]              Sin flags es interactivo
+  rm <id> [--yes]                A la papelera
+  fav <id>                       Marcar/desmarcar favorita
+  generate [largo]               Generar y copiar (formato de la web, default 16)
+  history <id> [--copy <n>]      Historial de contraseñas de la entrada
+
+COMPARTIR
+  share <id>                     Copiar formateada para chat (auto-clear 45s)
+  send <id> <email>              Compartir a otro usuario Lemonade
+  shares                         Pendientes recibidos
+  shares accept|reject <shareId>
+
+NOTAS SEGURAS
+  note list                      Listar
+  note show <id>                 Ver contenido
+  note copy <id>                 Contenido → clipboard (auto-clear 45s)
+  note add [--title T]           Crear (contenido por editor/stdin)
+  note edit <id>                 Editar título/contenido
+  note rm <id> [--yes]           A la papelera de notas
+
+PAPELERA
+  trash                          Listar borradas
+  trash restore <id>             Restaurar
+  trash purge <id> [--yes]       Borrado PERMANENTE (irreversible)
+
+ENV VAULT (zero-knowledge: pide la master password, nada sale de acá)
+  env projects                   Listar proyectos
+  env vars <proyecto>            Variables de un proyecto (nombres)
+  env copy <proyecto> <VAR>      Valor de una variable → clipboard
+  env export <proyecto>          Todas las variables formato .env → clipboard";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -66,6 +80,13 @@ fn main() -> ExitCode {
         "fav" | "star" => cmd_fav(&args[1..]),
         "share" => cmd_share(&args[1..]),
         "generate" | "gen" => cmd_generate(&args[1..]),
+        "show" => cmd_show(&args[1..]),
+        "history" => cmd_history(&args[1..]),
+        "send" => cmd_send(&args[1..]),
+        "shares" => cmd_shares(&args[1..]),
+        "note" | "notes" => cmd_note(&args[1..]),
+        "trash" => cmd_trash(&args[1..]),
+        "env" => cmd_env(&args[1..]),
         "help" | "--help" | "-h" | "" => {
             println!("{USAGE}");
             Ok(())
@@ -161,6 +182,27 @@ fn cmd_copy(args: &[String]) -> Result<(), String> {
         .unwrap_or(30);
 
     let cfg = config::Config::load()?;
+
+    // Custom field: por label (insensible a mayúsculas).
+    if let Some(label) = flag_value(args, "--custom") {
+        let entry = api::get_entry(&cfg, id)?;
+        let (l, v, t) = entry
+            .custom_fields
+            .iter()
+            .find(|(l, _, _)| l.eq_ignore_ascii_case(label))
+            .ok_or_else(|| {
+                let known: Vec<&str> = entry.custom_fields.iter().map(|(l, _, _)| l.as_str()).collect();
+                format!("no hay campo \"{label}\" (hay: {})", known.join(", "))
+            })?;
+        let secret = t == "password" || t == "pin";
+        clip::copy(v, if secret { Some(clear) } else { None })?;
+        if secret {
+            eprintln!("\"{l}\" copiado. El clipboard se limpia en {clear}s.");
+        } else {
+            eprintln!("\"{l}\" copiado.");
+        }
+        return Ok(());
+    }
 
     // username y url son metadata: salen del cache, sin viaje al server.
     let value = match field {
@@ -443,4 +485,336 @@ fn cmd_share(args: &[String]) -> Result<(), String> {
         e.title
     );
     Ok(())
+}
+
+fn cmd_show(args: &[String]) -> Result<(), String> {
+    let id = require_id(args, "show")?;
+    let cfg = config::Config::load()?;
+    let e = api::get_entry(&cfg, id)?;
+    let meta = api::list_entries(&cfg, false)?;
+    let has_totp = meta.iter().find(|m| m.id == id).map(|m| m.has_totp).unwrap_or(false);
+
+    println!("🍋 {}", e.title);
+    if !e.username.is_empty() {
+        println!("Usuario:    {}", e.username);
+    }
+    println!("Contraseña: ●●●●●●●●  (lemonade copy {id})");
+    if !e.url.is_empty() {
+        println!("URL:        {}", e.url);
+    }
+    if has_totp {
+        println!("TOTP:       sí  (lemonade totp {id})");
+    }
+    if !e.notes.is_empty() {
+        println!("Notas:\n{}", e.notes);
+    }
+    if !e.custom_fields.is_empty() {
+        println!("Campos custom:");
+        for (label, value, ftype) in &e.custom_fields {
+            if ftype == "password" || ftype == "pin" {
+                println!("  {label} [{ftype}]: ●●●●  (lemonade copy {id} --custom \"{label}\")");
+            } else {
+                println!("  {label}: {value}");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_history(args: &[String]) -> Result<(), String> {
+    let id = require_id(args, "history")?;
+    let cfg = config::Config::load()?;
+    let history = api::password_history(&cfg, id)?;
+    if history.is_empty() {
+        eprintln!("Sin historial: la contraseña nunca cambió.");
+        return Ok(());
+    }
+
+    if let Some(n) = flag_value(args, "--copy") {
+        let n: usize = n.parse().map_err(|_| "--copy espera el número de la lista")?;
+        let item = history
+            .get(n.saturating_sub(1))
+            .ok_or(format!("no hay entrada #{n} (hay {})", history.len()))?;
+        clip::copy(&item.password, Some(30))?;
+        eprintln!("Contraseña #{n} (de {}) copiada — se limpia en 30s.", item.changed_at);
+        return Ok(());
+    }
+
+    for (i, h) in history.iter().enumerate() {
+        println!("{}. {} — ●●●●●●●●  (--copy {})", i + 1, h.changed_at, i + 1);
+    }
+    Ok(())
+}
+
+fn cmd_send(args: &[String]) -> Result<(), String> {
+    let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
+    let (id, email) = match positional.as_slice() {
+        [id, email] => (id.as_str(), email.as_str()),
+        _ => return Err("uso: lemonade send <id> <email>".into()),
+    };
+    let cfg = config::Config::load()?;
+
+    let user = api::find_user(&cfg, email)?
+        .ok_or(format!("no hay ningún usuario Lemonade con el email {email} (búsqueda exacta)"))?;
+    let title = api::cached_title(id).unwrap_or_else(|| id.to_string());
+
+    let who = if user.display_name.is_empty() { &user.email } else { &user.display_name };
+    if !args.iter().any(|a| a == "--yes")
+        && !input::confirm(&format!("¿Compartir \"{title}\" con {who} <{}>?", user.email))?
+    {
+        eprintln!("Cancelado.");
+        return Ok(());
+    }
+    api::share_to_user(&cfg, id, &user.user_id)?;
+    eprintln!("\"{title}\" compartida con {who}. Le va a aparecer como pendiente para aceptar.");
+    Ok(())
+}
+
+fn cmd_shares(args: &[String]) -> Result<(), String> {
+    let cfg = config::Config::load()?;
+    match args.first().map(String::as_str) {
+        None | Some("list") => {
+            let pending = api::pending_shares(&cfg)?;
+            if pending.is_empty() {
+                eprintln!("No tenés compartidas pendientes.");
+                return Ok(());
+            }
+            for s in &pending {
+                println!("{}\t{}\tde {} <{}>", s.id, s.title, s.from_name, s.from_email);
+            }
+            eprintln!("\nAceptar: lemonade shares accept <id> · Rechazar: lemonade shares reject <id>");
+            Ok(())
+        }
+        Some("accept") => {
+            let id = require_id(&args[1..], "shares accept")?;
+            api::accept_share(&cfg, id)?;
+            eprintln!("Aceptada: ya está entre tus contraseñas.");
+            Ok(())
+        }
+        Some("reject") => {
+            let id = require_id(&args[1..], "shares reject")?;
+            api::reject_share(&cfg, id)?;
+            eprintln!("Rechazada.");
+            Ok(())
+        }
+        Some(other) => Err(format!("subcomando desconocido: shares {other}")),
+    }
+}
+
+fn cmd_note(args: &[String]) -> Result<(), String> {
+    let cfg = config::Config::load()?;
+    match args.first().map(String::as_str) {
+        None | Some("list") => {
+            for n in api::list_notes(&cfg)? {
+                println!("{}\t{}", n.id, n.title);
+            }
+            Ok(())
+        }
+        Some("show") => {
+            let id = require_id(&args[1..], "note show")?;
+            let (title, content) = api::get_note(&cfg, id)?;
+            println!("📝 {title}\n\n{content}");
+            Ok(())
+        }
+        Some("copy") => {
+            let id = require_id(&args[1..], "note copy")?;
+            let (title, content) = api::get_note(&cfg, id)?;
+            clip::copy(&content, Some(45))?;
+            eprintln!("Nota \"{title}\" copiada — el clipboard se limpia en 45s.");
+            Ok(())
+        }
+        Some("add") => {
+            let rest = &args[1..];
+            let title = match flag_value(rest, "--title") {
+                Some(t) => t.to_string(),
+                None => input::prompt("Título", None)?,
+            };
+            if title.is_empty() {
+                return Err("el título es obligatorio".into());
+            }
+            eprintln!("Contenido (terminá con una línea que diga solo \".\"):");
+            let content = input::read_multiline()?;
+            if content.trim().is_empty() {
+                return Err("la nota está vacía".into());
+            }
+            let id = api::create_note(&cfg, &title, &content)?;
+            eprintln!("Nota \"{title}\" creada ({id}).");
+            Ok(())
+        }
+        Some("edit") => {
+            let id = require_id(&args[1..], "note edit")?;
+            let (cur_title, cur_content) = api::get_note(&cfg, id)?;
+            eprintln!("Editando \"{cur_title}\" — Enter conserva el título.");
+            let title = input::prompt("Título", Some(&cur_title))?;
+            eprintln!("Contenido actual:\n{cur_content}\n");
+            let content = if input::confirm("¿Reemplazar el contenido?")? {
+                eprintln!("Contenido nuevo (terminá con una línea \".\"):");
+                Some(input::read_multiline()?)
+            } else {
+                None
+            };
+            let title_opt = if title != cur_title { Some(title.as_str()) } else { None };
+            if title_opt.is_none() && content.is_none() {
+                eprintln!("Sin cambios.");
+                return Ok(());
+            }
+            api::update_note(&cfg, id, title_opt, content.as_deref())?;
+            eprintln!("Nota actualizada.");
+            Ok(())
+        }
+        Some("rm") => {
+            let rest = &args[1..];
+            let id = require_id(rest, "note rm")?;
+            if !rest.iter().any(|a| a == "--yes") && !input::confirm("¿Mandar la nota a la papelera?")? {
+                eprintln!("Cancelado.");
+                return Ok(());
+            }
+            api::delete_note(&cfg, id)?;
+            eprintln!("Nota en la papelera.");
+            Ok(())
+        }
+        Some(other) => Err(format!("subcomando desconocido: note {other}")),
+    }
+}
+
+fn cmd_trash(args: &[String]) -> Result<(), String> {
+    let cfg = config::Config::load()?;
+    match args.first().map(String::as_str) {
+        None | Some("list") => {
+            let entries = api::list_trash(&cfg)?;
+            if entries.is_empty() {
+                eprintln!("Papelera vacía.");
+                return Ok(());
+            }
+            for e in &entries {
+                println!("{}\t{}\t{}", e.id, e.title, e.username);
+            }
+            eprintln!("\nRestaurar: lemonade trash restore <id> · Borrar definitivo: lemonade trash purge <id>");
+            Ok(())
+        }
+        Some("restore") => {
+            let id = require_id(&args[1..], "trash restore")?;
+            api::restore_entry(&cfg, id)?;
+            eprintln!("Restaurada: volvió a tus contraseñas.");
+            Ok(())
+        }
+        Some("purge") => {
+            let rest = &args[1..];
+            let id = require_id(rest, "trash purge")?;
+            if !rest.iter().any(|a| a == "--yes")
+                && !input::confirm("⚠️  Borrado PERMANENTE e irreversible. ¿Seguro?")?
+            {
+                eprintln!("Cancelado.");
+                return Ok(());
+            }
+            api::purge_entry(&cfg, id)?;
+            eprintln!("Borrada permanentemente.");
+            Ok(())
+        }
+        Some(other) => Err(format!("subcomando desconocido: trash {other}")),
+    }
+}
+
+fn env_project_id(cfg: &config::Config, name_or_id: &str) -> Result<(String, String), String> {
+    let uid = auth::TokenStore::load().ok_or("sin sesión")?.uid;
+    let projects = env::firestore_query(cfg, "env_projects", &[("userId", &uid)])?;
+    projects
+        .iter()
+        .find(|(id, f)| {
+            id == name_or_id
+                || f["name"]["stringValue"]
+                    .as_str()
+                    .map(|n| n.eq_ignore_ascii_case(name_or_id))
+                    .unwrap_or(false)
+        })
+        .map(|(id, f)| {
+            (
+                id.clone(),
+                f["name"]["stringValue"].as_str().unwrap_or(id).to_string(),
+            )
+        })
+        .ok_or_else(|| format!("no hay proyecto \"{name_or_id}\" (mirá: lemonade env projects)"))
+}
+
+fn cmd_env(args: &[String]) -> Result<(), String> {
+    let cfg = config::Config::load()?;
+    let uid = auth::TokenStore::load().ok_or("sin sesión")?.uid;
+
+    match args.first().map(String::as_str) {
+        Some("projects") => {
+            let projects = env::firestore_query(&cfg, "env_projects", &[("userId", &uid)])?;
+            if projects.is_empty() {
+                eprintln!("Sin proyectos en el Env Vault.");
+                return Ok(());
+            }
+            for (id, f) in &projects {
+                println!("{}\t{}", id, f["name"]["stringValue"].as_str().unwrap_or("?"));
+            }
+            Ok(())
+        }
+        Some("vars") => {
+            let project = require_id(&args[1..], "env vars")?;
+            let (pid, pname) = env_project_id(&cfg, project)?;
+            let vars = env::firestore_query(
+                &cfg,
+                "env_variables",
+                &[("userId", &uid), ("projectId", &pid)],
+            )?;
+            eprintln!("Proyecto {pname} — {} variables (solo nombres; el valor con env copy):", vars.len());
+            for (_, f) in &vars {
+                println!("{}", f["name"]["stringValue"].as_str().unwrap_or("?"));
+            }
+            Ok(())
+        }
+        Some("copy") => {
+            let positional: Vec<&String> = args[1..].iter().filter(|a| !a.starts_with("--")).collect();
+            let (project, var) = match positional.as_slice() {
+                [p, v] => (p.as_str(), v.as_str()),
+                _ => return Err("uso: lemonade env copy <proyecto> <VAR>".into()),
+            };
+            let (pid, _) = env_project_id(&cfg, project)?;
+            let vars = env::firestore_query(
+                &cfg,
+                "env_variables",
+                &[("userId", &uid), ("projectId", &pid)],
+            )?;
+            let (_, fields) = vars
+                .iter()
+                .find(|(_, f)| f["name"]["stringValue"].as_str() == Some(var))
+                .ok_or_else(|| format!("no hay variable {var} en ese proyecto"))?;
+
+            // Recién acá se pide la master password: sin variable no hay unlock.
+            let key = env::unlock(&cfg)?;
+            let value = key.decrypt_blob(&env::map_blob(&fields["encryptedValue"]))?;
+            clip::copy(&value, Some(30))?;
+            eprintln!("{var} copiada — el clipboard se limpia en 30s.");
+            Ok(())
+        }
+        Some("export") => {
+            let project = require_id(&args[1..], "env export")?;
+            let (pid, pname) = env_project_id(&cfg, project)?;
+            let vars = env::firestore_query(
+                &cfg,
+                "env_variables",
+                &[("userId", &uid), ("projectId", &pid)],
+            )?;
+            if vars.is_empty() {
+                return Err("el proyecto no tiene variables".into());
+            }
+            let key = env::unlock(&cfg)?;
+            let mut out = String::new();
+            for (_, f) in &vars {
+                let name = f["name"]["stringValue"].as_str().unwrap_or("?");
+                let value = key.decrypt_blob(&env::map_blob(&f["encryptedValue"]))?;
+                out.push_str(&format!("{name}={value}\n"));
+            }
+            clip::copy(&out, Some(60))?;
+            eprintln!(
+                "{} variables de {pname} copiadas formato .env — el clipboard se limpia en 60s.",
+                vars.len()
+            );
+            Ok(())
+        }
+        _ => Err("uso: lemonade env projects | vars <p> | copy <p> <VAR> | export <p>".into()),
+    }
 }
