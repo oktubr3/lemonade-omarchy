@@ -156,6 +156,14 @@ Panel {
     }
   }
 
+  // Ctrl+O: el ritual completo de la web en una tecla — copia la contraseña
+  // y abre la URL en el browser por default. El ícono ↗ de la fila solo abre.
+  function openUrl(withPassword) {
+    var e = current(); if (!e || e.kind !== "pass") return
+    if (!e.url || e.url === "") { statusText = e.title + " no tiene URL"; return }
+    runAction(withPassword ? ["open", e.id, "--copy"] : ["open", e.id], true)
+  }
+
   function copyUsername() {
     var e = current(); if (!e || e.kind !== "pass") return
     statusText = "Copiando usuario de " + e.title + "…"
@@ -582,6 +590,7 @@ Panel {
             if (event.key === Qt.Key_F) { root.toggleFav(); event.accepted = true; return }
             if (event.key === Qt.Key_S) { root.shareEntry(); event.accepted = true; return }
             if (event.key === Qt.Key_D) { root.showDetail(); event.accepted = true; return }
+            if (event.key === Qt.Key_O) { root.openUrl(true); event.accepted = true; return }
           }
         }
         function dispatchEnter(mods) {
@@ -663,7 +672,7 @@ Panel {
             spacing: Style.space(8)
 
             Column {
-              width: parent.width - kindBadge.width - totpBadge.width - starBadge.width - parent.spacing * 3
+              width: parent.width - linkBadge.width - kindBadge.width - totpBadge.width - starBadge.width - parent.spacing * 4
               anchors.verticalCenter: parent.verticalCenter
               Text {
                 width: parent.width
@@ -681,6 +690,28 @@ Panel {
                 color: root.lemonMuted
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
+              }
+            }
+
+            Text {
+              id: linkBadge
+              anchors.verticalCenter: parent.verticalCenter
+              visible: modelData.kind === "pass" && modelData.url !== undefined && modelData.url !== ""
+              width: visible ? implicitWidth + Style.space(4) : 0
+              text: "↗"
+              color: linkArea.containsMouse ? root.lemonGold : root.lemonMuted
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              MouseArea {
+                id: linkArea
+                anchors.fill: parent
+                anchors.margins: -Style.space(3)
+                hoverEnabled: true
+                onClicked: function(mouse) {
+                  root.selectedIndex = index
+                  root.openUrl(false)
+                  mouse.accepted = true
+                }
               }
             }
 
@@ -767,6 +798,7 @@ Panel {
                 { k: "↵", l: "contraseña" },
                 { k: "ctrl u", l: "usuario" },
                 { k: "ctrl l", l: "URL" },
+                { k: "ctrl o", l: "abrir URL + copiar pass" },
                 { k: "alt ↵", l: "TOTP" },
                 { k: "ctrl s", l: "compartir" },
                 { k: "ctrl f", l: "★" },

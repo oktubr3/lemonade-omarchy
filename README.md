@@ -30,6 +30,7 @@ escribir   filtra
 Enter      copia la contraseña (el clipboard se limpia solo a los 30s)
 Ctrl+U     copia el usuario (también Ctrl+↵)
 Ctrl+L     copia la URL
+Ctrl+O     copia la contraseña Y abre la URL en el browser (el ↗ de la fila solo abre)
 Alt+↵      copia el código TOTP vigente
 Shift+↵    cierra el panel y tipea la contraseña en la ventana enfocada
 Ctrl+S     copia la entrada formateada para compartir (WhatsApp, etc.)

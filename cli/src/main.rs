@@ -30,6 +30,8 @@ CONTRASEÑAS
   totp <id>                      Código TOTP → clipboard
   type <id> [--full] [--delay <ms>]   Tipear en la ventana enfocada
   show <id>                      Ficha completa (campos custom, notas, TOTP)
+  open <id> [--copy]             Abrir la URL en el browser (--copy: antes
+                                 copia la contraseña al clipboard)
   add [--title T] [--username U] [--url URL] [--generate [largo]]
   edit <id> [flags]              Sin flags es interactivo
   rm <id> [--yes]                A la papelera
@@ -81,6 +83,7 @@ fn main() -> ExitCode {
         "share" => cmd_share(&args[1..]),
         "generate" | "gen" => cmd_generate(&args[1..]),
         "show" => cmd_show(&args[1..]),
+        "open" => cmd_open(&args[1..]),
         "history" => cmd_history(&args[1..]),
         "send" => cmd_send(&args[1..]),
         "shares" => cmd_shares(&args[1..]),
@@ -849,4 +852,36 @@ fn cmd_env(args: &[String]) -> Result<(), String> {
         }
         _ => Err("uso: lemonade env projects | vars <p> | copy <p> <VAR> | export <p>".into()),
     }
+}
+
+fn cmd_open(args: &[String]) -> Result<(), String> {
+    let id = require_id(args, "open")?;
+    let cfg = config::Config::load()?;
+
+    let mut url = api::cached_field(&cfg, id, "url")?;
+    if url.is_empty() {
+        return Err("la entrada no tiene URL".into());
+    }
+    if !url.contains("://") {
+        url = format!("https://{url}");
+    }
+
+    if args.iter().any(|a| a == "--copy") {
+        let entry = api::get_entry(&cfg, id)?;
+        if !entry.password.is_empty() {
+            clip::copy(&entry.password, Some(30))?;
+            eprintln!("Contraseña copiada (se limpia en 30s).");
+        }
+    }
+
+    // xdg-open respeta $BROWSER y el default del sistema. Desatendido.
+    std::process::Command::new("xdg-open")
+        .arg(&url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("xdg-open: {e}"))?;
+    eprintln!("Abriendo {url}");
+    Ok(())
 }
